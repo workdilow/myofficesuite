@@ -92,3 +92,40 @@ class StreamingTests(unittest.TestCase):
             [{"delta": "Halo dunia"}, {"done": True}],
             mime="application/json",
         )
+
+    def test_connection_check_uses_a_fixed_prompt_without_document_or_returned_secret(self):
+        received = []
+
+        class Provider(BaseHTTPRequestHandler):
+            def do_POST(self):
+                received.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}]}')
+
+        with serve(Provider) as upstream, serve(host.Handler) as downstream, patch(
+            "host.SESSION", (f"http://127.0.0.1:{upstream}/chat/completions", "test", "fixture-key")
+        ):
+            conn = HTTPConnection("127.0.0.1", downstream, timeout=3)
+            self.addCleanup(conn.close)
+            conn.request("POST", "/api/ai/check", json.dumps({"context": "never sent"}),
+                         {"Host": "127.0.0.1:4173", "Content-Type": "application/json"})
+            response = conn.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(json.load(response), {"reachable": True})
+            context = json.loads(received[0]["messages"][1]["content"])
+            self.assertEqual(context["documentContext"], "")
+            self.assertEqual(context["instruction"], "Reply briefly with OK.")
+
+    def test_changing_endpoint_requires_a_new_explicit_key(self):
+        with serve(host.Handler) as port, patch(
+            "host.SESSION", ("https://initial.example/chat", "old", "initial-key")
+        ):
+            conn = HTTPConnection("127.0.0.1", port, timeout=3)
+            self.addCleanup(conn.close)
+            for url, has_key in [("https://initial.example/chat", True), ("https://new.example/chat", False)]:
+                conn.request("POST", "/api/ai/settings", json.dumps({"url": url, "model": "new", "apiKey": ""}),
+                             {"Host": "127.0.0.1:4173", "Content-Type": "application/json"})
+                response = conn.getresponse()
+                self.assertEqual(response.status, 200)
+                self.assertIs(json.load(response)["hasApiKey"], has_key)

@@ -1,7 +1,9 @@
 """Targeted PPTX edits which keep unrelated package members byte-for-byte."""
 import posixpath
 from xml.dom import Node, minidom
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZipFile
+
+from office_package import XmlPackage
 
 P = "http://schemas.openxmlformats.org/presentationml/2006/main"
 A = "http://schemas.openxmlformats.org/drawingml/2006/main"
@@ -44,28 +46,7 @@ def target(part, relationship):
                               posixpath.join(posixpath.dirname(part), value))
 
 
-class Package:
-    def __init__(self, archive):
-        self.archive = archive
-        self.updates = {}
-        names = archive.namelist()
-        if len(names) != len(set(names)) or len(names) > 12000:
-            raise ValueError("Entri PPTX ganda atau melebihi batas.")
-        if sum(member.file_size for member in archive.infolist()) > 128 * 1024 * 1024:
-            raise ValueError("PPTX melebihi batas ukuran dekompresi 128 MiB.")
-        self.names = set(names)
-
-    def xml(self, part):
-        data = self.updates.get(part)
-        if data is None:
-            data = self.archive.read(part)
-        if len(data) > 8 * 1024 * 1024 or b"\x00" in data or b"<!doctype" in data.lower():
-            raise ValueError("Bagian XML PPTX tidak didukung atau melebihi batas.")
-        return minidom.parseString(data).documentElement
-
-    def update(self, part, element):
-        self.updates[part] = element.ownerDocument.toxml(encoding="UTF-8")
-
+class Package(XmlPackage):
     def links(self, part):
         return children(self.xml(rels(part)), REL, "Relationship")
 
@@ -77,17 +58,6 @@ class Package:
         slides = [(entry, target(PRESENTATION, links[entry.getAttributeNS(R, "id")]))
                   for entry in children(listing, P, "sldId")] if listing is not None else []
         return listing, slides
-
-    def write(self, output):
-        if any(name.lower().startswith("_xmlsignatures/") for name in self.names):
-            raise ValueError("PPTX bertanda tangan perlu disimpan ulang tanpa tanda tangan sebelum diedit.")
-        with ZipFile(output, "w", ZIP_DEFLATED) as result:
-            for name in self.archive.namelist():
-                if name not in self.updates:
-                    result.writestr(name, self.archive.read(name))
-            for name, data in self.updates.items():
-                result.writestr(name, data)
-
 
 def text_shapes(slide):
     for shape in slide.getElementsByTagNameNS(P, "sp"):
@@ -102,6 +72,32 @@ def paragraphs(body):
     return children(body, A, "p")
 
 
+def body_text(body):
+    return "\n".join("".join(el.firstChild.data for el in para.getElementsByTagNameNS(A, "t")
+                             if el.firstChild) for para in paragraphs(body))
+
+
+def notes_body(root):
+    for shape in root.getElementsByTagNameNS(P, "sp"):
+        nv = first(shape, P, "nvSpPr")
+        if nv is None:
+            continue
+        props = first(nv, P, "nvPr")
+        placeholder = first(props, P, "ph") if props is not None else None
+        if placeholder is not None and placeholder.getAttribute("type") == "body":
+            return first(shape, P, "txBody")
+    return None
+
+
+def slide_notes(package, slide_part):
+    if rels(slide_part) not in package.names:
+        return None
+    targets = related(package, slide_part, "notesSlide")
+    if len(targets) != 1 or targets[0] not in package.names:
+        return None
+    return targets[0]
+
+
 def preview_slides(source):
     with ZipFile(source) as archive:
         package = Package(archive)
@@ -112,10 +108,13 @@ def preview_slides(source):
         for index, (_, part) in enumerate(slides[:40]):
             shapes = []
             for shape_id, name, body in text_shapes(package.xml(part)):
-                value = "\n".join("".join(el.firstChild.data for el in para.getElementsByTagNameNS(A, "t")
-                                          if el.firstChild) for para in paragraphs(body))
-                shapes.append({"id": shape_id, "name": name, "text": value[:12000]})
-            preview.append({"index": index, "name": f"Slide {index + 1}", "shapes": shapes})
+                shapes.append({"id": shape_id, "name": name, "text": body_text(body)[:12000]})
+            notes_part = slide_notes(package, part)
+            notes = notes_body(package.xml(notes_part)) if notes_part else None
+            notes_text = body_text(notes) if notes is not None else None
+            if notes_text is not None and len(notes_text) > 12000:
+                notes_text = None
+            preview.append({"index": index, "name": f"Slide {index + 1}", "shapes": shapes, "notes": notes_text})
         return {"slideCount": len(slides), "slides": preview, "truncated": len(slides) > len(preview)}
 
 
@@ -150,13 +149,29 @@ def replace_text(body, text):
 def apply_edits(package, slides, entries):
     modified = {}
     for entry in entries:
-        index, shape_id, text = entry["slide"], entry["shapeId"], entry["text"]
-        if type(index) is not int or not 0 <= index < len(slides) or type(shape_id) is not int or not isinstance(text, str) or len(text) > 12000:
+        index, text = entry["slide"], entry["text"]
+        if type(index) is not int or not 0 <= index < len(slides) or not isinstance(text, str) or len(text) > 12000:
             raise ValueError("Edit teks slide tidak valid.")
+        if any((ord(char) < 32 and char not in "\n\t") or char in "\ufffe\uffff" for char in text):
+            raise ValueError("Teks slide berisi karakter yang tidak dapat disimpan.")
         part = slides[index][1]
+        is_notes = entry.get("kind") == "notes"
+        if is_notes:
+            part = slide_notes(package, part)
+            if part is None:
+                raise ValueError("Slide belum memiliki bagian catatan pembicara.")
         if part not in modified:
             modified[part] = package.xml(part)
         slide = modified[part]
+        if is_notes:
+            body = notes_body(slide)
+            if body is None or len(body_text(body)) > 12000:
+                raise ValueError("Bagian catatan pembicara tidak dapat disunting.")
+            replace_text(body, text)
+            continue
+        shape_id = entry["shapeId"]
+        if type(shape_id) is not int:
+            raise ValueError("ID objek teks slide tidak valid.")
         for key, _, body in text_shapes(slide):
             if key == shape_id:
                 replace_text(body, text)

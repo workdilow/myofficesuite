@@ -7,6 +7,7 @@ import subprocess
 from tempfile import TemporaryFile
 
 import pdf_support
+import word_document
 
 from slides import edit_slides, preview_slides, append_slides
 
@@ -70,7 +71,12 @@ def word(operation, source, output, fields):
         text = fields.get("text", "")
         if source.suffix in (".txt", ".md"):
             output.write_text(text, encoding="utf-8")
-        elif source.suffix in (".docx", ".odt", ".rtf"):
+        elif source.suffix == ".docx":
+            try:
+                word_document.save_text(source, output, text)
+            except word_document.EditError as exc:
+                raise RequestError(str(exc), 422) from exc
+        elif source.suffix in (".odt", ".rtf"):
             draft = source.with_name("draft.txt")
             draft.write_text(text, encoding="utf-8")
             run("word", "convert", draft, output)
@@ -78,7 +84,13 @@ def word(operation, source, output, fields):
             raise RequestError("Simpan ulang DOC sebagai DOCX di WordCraft terlebih dahulu.")
         return file_result(output)
     if operation in ("open", "extract"):
-        text = source.read_text(encoding="utf-8-sig") if source.suffix in (".txt", ".md") else run("word", "text", source)
+        if source.suffix == ".docx" and operation == "open":
+            try:
+                text = word_document.open_text(source)
+            except word_document.EditError as exc:
+                raise RequestError(str(exc), 422) from exc
+        else:
+            text = source.read_text(encoding="utf-8-sig") if source.suffix in (".txt", ".md") else run("word", "text", source)
         return {"text": text} if operation == "open" else (text.encode(), "text/plain; charset=utf-8", None)
     raise RequestError("Operasi Writer tidak tersedia.", 404)
 

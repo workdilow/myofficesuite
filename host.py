@@ -185,9 +185,9 @@ def capabilities():
     ocr = engines.ocr_languages() if pdf_view else []
     return {"version": VERSION, "engines": engines_available, "limits": {"uploadBytes": engines.LIMIT},
             "operations": {
-                "word": ["open-text", "replace-text"] + (["extract-office-text", "export-new-document"] if engines_available["word"] else []),
+                "word": ["open-text", "replace-text", "edit-docx-body"] + (["extract-office-text", "export-new-document"] if engines_available["word"] else []),
                 "sheet": ["preview-delimited", "edit-delimited"] + (["preview-office", "recalculate-preview", "save-xlsx", "insert-chart", "render-html"] if engines_available["grid"] else []),
-                "slides": ["preview-text", "edit-text"] + (["render", "roundtrip", "from-outline", "append-outline"] if engines_available["deck"] else []),
+                "slides": ["preview-text", "edit-text", "edit-speaker-notes"] + (["render", "roundtrip", "from-outline", "append-outline"] if engines_available["deck"] else []),
                 "pdf": (["open", "render"] if pdf_view else [])
                        + (["open-save"] if engines_available["pdf"] else [])
                        + (["encrypted-view", "page-copy", "text-note"] if alternate_pdf else [])
@@ -270,6 +270,14 @@ class Handler(BaseHTTPRequestHandler):
             with SESSION_WRITE:
                 SESSION = None
                 return settings()
+        if path == "/api/ai/check":
+            if not STREAM_SLOTS.acquire(blocking=False):
+                raise engines.RequestError("Provider sedang digunakan. Coba lagi setelah permintaan selesai.", 429)
+            try:
+                generate({"task": "Connection check", "input": "Reply briefly with OK.", "language": "English"})
+                return {"reachable": True}
+            finally:
+                STREAM_SLOTS.release()
         if path in ("/api/ai/settings", "/api/ai/generate", "/api/ai/stream"):
             if self.headers.get_content_type() != "application/json":
                 raise engines.RequestError("Permintaan AI harus memakai JSON.", 415)
@@ -281,8 +289,12 @@ class Handler(BaseHTTPRequestHandler):
             if path.endswith("/stream"):
                 return self.stream(provider_request(data, stream=True))
             with SESSION_WRITE:
-                key = "" if data.get("clearApiKey") is True else data.get("apiKey") or active_provider()[0][2]
-                SESSION = provider(data.get("url"), data.get("model"), key)
+                previous, _ = active_provider()
+                url, model, key = provider(data.get("url"), data.get("model"),
+                                           "" if data.get("clearApiKey") is True else data.get("apiKey", ""))
+                if not key and data.get("clearApiKey") is not True and url == previous[0]:
+                    key = previous[2]
+                SESSION = url, model, key
                 return settings()
         route = re.fullmatch(r"/api/engine/(word|sheet|slides|pdf)/([a-z0-9/-]+)", path)
         if not route:

@@ -77,3 +77,25 @@ class SlidesTests(unittest.TestCase):
                 }:
                     self.assertEqual(current.read(name), old.read(name), name)
             self.assertEqual(Presentation(source).slides[1].shapes.title.text, "Kedua")
+
+    def test_speaker_notes_edit_preserves_slide_content_and_unrelated_parts(self):
+        from pptx import Presentation
+
+        with TemporaryDirectory() as folder:
+            source, output = [Path(folder) / name for name in ("source.pptx", "edited.pptx")]
+            deck = Presentation()
+            slide = deck.slides.add_slide(deck.slide_layouts[1])
+            slide.shapes.title.text = "Original title"
+            slide.notes_slide.notes_text_frame.text = "Catatan lama"
+            deck.slides.add_slide(deck.slide_layouts[1])
+            deck.save(source)
+            preview = preview_slides(source)
+            self.assertEqual(preview["slides"][0]["notes"], "Catatan lama")
+            self.assertIsNone(preview["slides"][1]["notes"])
+            edit_slides(source, output, [{"slide": 0, "kind": "notes", "text": "Catatan baru\nBaris kedua"}])
+            reopened = Presentation(output)
+            self.assertEqual(reopened.slides[0].notes_slide.notes_text_frame.text, "Catatan baru\nBaris kedua")
+            self.assertEqual(reopened.slides[0].shapes.title.text, "Original title")
+            with ZipFile(source) as old, ZipFile(output) as new:
+                differences = [name for name in old.namelist() if old.read(name) != new.read(name)]
+            self.assertEqual(differences, ["ppt/notesSlides/notesSlide1.xml"])
