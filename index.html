@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f5f7fb" />
+    <title>Ruangkerja — Office suite</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#home" aria-label="Ruangkerja beranda">
+          <span class="brand-mark"><span></span><span></span><span></span><span></span></span>
+          <span>ruang<span class="brand-strong">kerja</span></span>
+        </a>
+        <button class="workspace-switch"><span class="workspace-avatar">R</span><span class="workspace-copy"><b>Ruang kerja saya</b><small>Personal workspace</small></span><span class="chevron">⌄</span></button>
+        <button class="new-button" id="newFileButton"><span>＋</span> Buat dokumen baru</button>
+        <nav class="side-nav" aria-label="Navigasi utama">
+          <p class="nav-label">WORKSPACE</p>
+          <a class="nav-link active" href="#home" data-view="home"><span class="nav-icon">◫</span> Beranda</a>
+          <a class="nav-link" href="#recent" data-view="recent"><span class="nav-icon">◷</span> Terbaru <span class="nav-count">8</span></a>
+          <a class="nav-link" href="#starred" data-view="starred"><span class="nav-icon">☆</span> Favorit</a>
+          <a class="nav-link" href="#shared" data-view="shared"><span class="nav-icon">♧</span> Dibagikan kepada saya</a>
+          <button class="nav-link" id="discoverLink"><span class="nav-icon">✳</span> Temukan tools</button>
+          <p class="nav-label tools-label">APLIKASI</p>
+          <button class="nav-link tool-link" data-tool="writer"><span class="file-icon word">W</span> Writer</button>
+          <button class="nav-link tool-link" data-tool="sheets"><span class="file-icon sheet">▦</span> Spreadsheet</button>
+          <button class="nav-link tool-link" data-tool="slides"><span class="file-icon slides">▰</span> Presentation</button>
+          <button class="nav-link tool-link" data-tool="pdf"><span class="file-icon pdf">▤</span> PDF tools</button>
+        </nav>
+        <button class="nav-link ai-settings-link" id="aiSettingsButton"><span class="nav-icon">⚙</span> Pengaturan provider AI</button>
+        <div class="sidebar-bottom"><div class="storage-card"><div class="storage-top"><span>Penyimpanan</span><span>12%</span></div><div class="storage-track"><span></span></div><small>1,2 GB dari 10 GB digunakan</small></div><button class="profile-button"><span class="profile-avatar">AN</span><span><b>Andi Nugraha</b><small>Personal</small></span><span class="chevron">···</span></button></div>
+      </aside>
+
+      <main class="main-content" id="mainContent">
+        <header class="topbar"><div class="breadcrumbs"><span>Ruang kerja saya</span><span class="crumb-sep">/</span><b id="pageTitle">Beranda</b></div><div class="top-actions"><label class="search-box"><span>⌕</span><input id="searchInput" placeholder="Cari file atau minta AI..." /><kbd>⌘ K</kbd></label><button class="icon-button" aria-label="Notifikasi">♧<i></i></button><button class="help-button">?</button></div></header>
+        <div class="page-wrap" id="homeView">
+          <section class="welcome-row"><div><div class="eyebrow"><span class="sparkle">✳</span> WORKSPACE PRIBADI <span class="eyebrow-dot">·</span> RABU, 18 NOVEMBER 2026</div><h1>Selamat pagi, Andi <span class="wave">✦</span></h1><p class="welcome-sub">Apa yang ingin Anda kerjakan hari ini?</p></div><button class="secondary-button" id="uploadButton"><span>↑</span> Buka file</button><input id="fileInput" type="file" hidden accept=".doc,.docx,.rtf,.odt,.txt,.md,.xlsx,.xls,.csv,.tsv,.ods,.pdf,.pptx" /></section>
+
+          <section class="ai-hero">
+            <div class="hero-glow"></div><div class="hero-topline"><div class="ai-brand"><span class="ai-orb">✳</span><span>Ruangkerja <b>AI</b></span><span class="beta-tag">BETA</span></div><button class="hero-menu" aria-label="Opsi AI">···</button></div>
+            <h2>Ide Anda, jadi nyata.</h2><p class="hero-sub">Tulis, analisis, dan rangkum lebih cepat dengan AI yang memahami pekerjaan Anda.</p>
+            <form class="prompt-box" id="promptForm"><textarea id="promptInput" rows="1" placeholder="Contoh: Buat proposal pemasaran untuk produk kopi lokal..." aria-label="Instruksi untuk AI"></textarea><div class="prompt-controls"><div class="prompt-tools"><button type="button" class="prompt-chip" id="promptType"><span class="mini-type word">W</span><span id="selectedType">Dokumen</span><span class="tiny-chevron">⌄</span></button><button type="button" class="prompt-chip muted-chip" id="attachButton">＋ <span>Lampirkan</span></button><input type="file" id="attachInput" hidden multiple /></div><button class="send-button" type="submit" aria-label="Kirim ke AI">↑</button></div></form>
+            <div class="prompt-suggestions"><span>Coba:</span><button data-prompt="Ringkas dokumen ini menjadi 5 poin utama">Ringkas dokumen</button><button data-prompt="Buat presentasi 5 slide tentang strategi pertumbuhan bisnis">Buat presentasi</button><button data-prompt="Analisis data penjualan saya dan temukan trennya">Analisis data</button><button data-prompt="Bantu saya menulis email profesional untuk klien">Tulis email</button></div>
+            <div class="hero-foot"><span><i class="shield">◈</i> File Anda tetap privat</span><span>AI dapat membuat kesalahan. Periksa hasilnya.</span></div>
+          </section>
+
+          <section class="tools-section"><div class="section-heading"><div><h3>Mulai dari aplikasi</h3><p>Semua yang Anda butuhkan, dalam satu tempat.</p></div><button class="text-button" id="allToolsButton">Lihat semua <span>→</span></button></div><div class="tool-grid">
+            <button class="tool-card" data-tool="writer"><span class="tool-icon word-icon">W</span><span class="tool-copy"><b>Writer</b><small>Dokumen dan tulisan</small></span><span class="tool-arrow">↗</span></button>
+            <button class="tool-card" data-tool="sheets"><span class="tool-icon sheet-icon"><span>▦</span></span><span class="tool-copy"><b>Spreadsheet</b><small>Data dan analisis</small></span><span class="tool-arrow">↗</span></button>
+            <button class="tool-card" data-tool="slides"><span class="tool-icon slides-icon">▰</span><span class="tool-copy"><b>Presentation</b><small>Presentasi dan cerita</small></span><span class="tool-arrow">↗</span></button>
+            <button class="tool-card" data-tool="pdf"><span class="tool-icon pdf-icon">PDF</span><span class="tool-copy"><b>PDF tools</b><small>Baca dan olah PDF</small></span><span class="tool-arrow">↗</span></button>
+          </div></section>
+
+          <section class="recent-section" id="recentSection"><div class="section-heading recent-heading"><div><h3>Baru-baru ini</h3><p>Lanjutkan pekerjaan terakhir Anda.</p></div><div class="recent-controls"><button class="filter-button" id="filterButton">Semua file <span>⌄</span></button><button class="view-toggle" aria-label="Tampilan daftar">☷</button></div></div><div class="file-table"><div class="table-head"><span>NAMA</span><span>TERAKHIR DIBUKA</span><span>PEMILIK</span><span></span></div><div id="fileRows"></div><div class="empty-state" id="emptyState" hidden><span>⌕</span><b>File tidak ditemukan</b><small>Coba kata kunci lain.</small></div></div></section>
+          <footer class="home-footer"><span>Ruangkerja menyimpan perubahan Anda secara otomatis</span><span><a href="#privacy">Privasi</a><a href="#feedback">Kirim masukan</a></span></footer>
+        </div>
+        <section class="discover-page" id="discoverView" hidden>
+          <div class="discover-heading"><div><div class="eyebrow"><span class="sparkle">✳</span> RUANGKERJA TOOLBOX</div><h1>Semua tools, satu tempat.</h1><p>AI untuk menulis dan belajar, serta alat praktis untuk file dan dokumen Anda.</p></div><div class="discover-search"><span>⌕</span><input id="toolSearch" placeholder="Cari tools..." /></div></div>
+          <div class="catalog-tabs" role="tablist"><button class="catalog-tab active" data-catalog="ai">AI Tools <span id="aiCount"></span></button><button class="catalog-tab" data-catalog="other">Other Tools <span id="otherCount"></span></button></div>
+          <div class="catalog-categories" id="catalogCategories"></div>
+          <div id="catalogSections"></div>
+          <footer class="catalog-note"><span>✳</span> Sebagian tools memerlukan engine atau layanan AI yang belum terhubung. Status ditampilkan sebelum Anda menjalankannya.</footer>
+        </section>
+        <section class="workbench" id="workbench" hidden></section>
+      </main>
+    </div>
+    <div class="toast" id="toast" role="status"></div>
+    <div class="modal-backdrop" id="aiSettingsBackdrop" hidden><div class="tool-modal ai-settings-modal" role="dialog" aria-modal="true" aria-labelledby="aiSettingsTitle"><button class="modal-close" id="aiSettingsClose" aria-label="Tutup">×</button><div class="tool-modal-icon">⚙</div><div class="tool-modal-kicker">AI GATEWAY LOKAL</div><h2 id="aiSettingsTitle">Pengaturan provider</h2><p class="tool-modal-description">Pilih endpoint chat-completions dan model. API key dikirim hanya ke host loopback, disimpan di memori proses, dan tidak disimpan di browser atau disk.</p><form id="aiSettingsForm"><label class="tool-field-label">URL endpoint<input class="tool-text-input" id="aiSettingsUrl" type="url" maxlength="2048" placeholder="https://provider.example/v1/chat/completions" required /></label><label class="tool-field-label">Model<input class="tool-text-input" id="aiSettingsModel" maxlength="128" placeholder="model-name" required /></label><label class="tool-field-label">API key<input class="tool-text-input" id="aiSettingsKey" type="password" maxlength="4096" autocomplete="new-password" placeholder="Kosongkan untuk mempertahankan key aktif" /></label><label class="ai-settings-clear"><input id="aiSettingsClearKey" type="checkbox" /> Hapus API key tersimpan</label><p class="ai-settings-status" id="aiSettingsStatus" role="status"></p><div id="aiSettingsError" class="tool-result" hidden></div><div class="tool-modal-actions"><button type="button" class="secondary-button" id="aiSettingsReset">Kembali ke environment</button><button type="button" class="secondary-button" id="aiSettingsCancel">Tutup</button><button type="submit" class="primary-action" id="aiSettingsSave">Simpan di sesi ini</button></div></form></div></div>
+    <div class="modal-backdrop" id="toolModalBackdrop" hidden><div class="tool-modal" role="dialog" aria-modal="true" aria-labelledby="toolModalTitle"><button class="modal-close" id="toolModalClose">×</button><div class="tool-modal-icon" id="toolModalIcon">✳</div><div class="tool-modal-kicker" id="toolModalCategory">AI TOOL</div><h2 id="toolModalTitle">Tool</h2><p class="tool-modal-description" id="toolModalDescription"></p><div id="toolModalFields"></div><div id="toolModalResult"></div><div class="tool-modal-actions"><button class="secondary-button" id="toolModalCancel">Tutup</button><button class="primary-action" id="toolModalRun">Mulai</button></div></div></div>
+    <div class="modal-backdrop" id="modalBackdrop" hidden><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><button class="modal-close" id="modalClose">×</button><div class="modal-mark" id="modalMark">W</div><p class="eyebrow">DOKUMEN BARU</p><h2 id="modalTitle">Buat dokumen</h2><p class="modal-desc">Pilih aplikasi untuk mulai bekerja.</p><div class="modal-options"><button data-tool="writer"><span class="file-icon word">W</span><span><b>Dokumen</b><small>Writer</small></span><span>→</span></button><button data-tool="sheets"><span class="file-icon sheet">▦</span><span><b>Spreadsheet</b><small>Analisis data</small></span><span>→</span></button><button data-tool="slides"><span class="file-icon slides">▰</span><span><b>Presentasi</b><small>Presentation</small></span><span>→</span></button><button data-tool="pdf"><span class="file-icon pdf">▤</span><span><b>PDF tools</b><small>Kelola PDF</small></span><span>→</span></button></div></div></div>
+    <script src="writer_review.js"></script>
+    <script src="sheet_stats.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
