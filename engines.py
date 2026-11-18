@@ -244,11 +244,20 @@ def pdf(operation, source, output, fields):
     if operation == "open":
         pages = info["pages"]
         count = len(pages) if isinstance(pages, list) else int(pages)
-        read = min(count, 12)
-        parts = [run("pdf", "text", source, "--page", number) for number in range(1, read + 1)]
-        text = "\n\n".join(parts)
-        return {"text": text[:100000], "pageCount": count, "pagesExtracted": read, "encrypted": False,
-                "textLimitReached": read < count or len(text) > 100000}
+        page_texts = []
+        remaining = 100000
+        truncated = False
+        for number in range(1, min(count, 12) + 1):
+            if remaining == 0:
+                break
+            text = run("pdf", "text", source, "--page", number).strip()
+            truncated = len(text) > remaining
+            page_texts.append(text[:remaining])
+            remaining -= len(page_texts[-1])
+        text = "\n\n".join(f"--- Halaman {index} ---\n{page}" for index, page in enumerate(page_texts, 1))
+        return {"text": text, "pageTexts": page_texts, "pageCount": count,
+                "pagesExtracted": len(page_texts), "encrypted": False,
+                "textLimitReached": len(page_texts) < count or truncated}
     if re.fullmatch(r"page/[1-9][0-9]{0,5}", operation):
         image = output.with_suffix(".png")
         run("pdf", "render", source, "--page", operation.split("/")[-1], "--dpi", "96", "--out", image)

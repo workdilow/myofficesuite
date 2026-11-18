@@ -1,7 +1,7 @@
 """Run Ruangkerja at http://127.0.0.1:4173 with Python 3.10+."""
 from email import policy
 from email.parser import BytesParser
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import mimetypes
 import os
@@ -9,6 +9,8 @@ from pathlib import Path
 import re
 import shutil
 from tempfile import TemporaryDirectory
+from threading import BoundedSemaphore, Lock
+from http.client import HTTPException
 from urllib.error import URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -18,11 +20,17 @@ from zipfile import BadZipFile
 import engines
 
 ROOT = Path(__file__).resolve().parent
-STATIC = {"", "index.html", "styles.css", "app.js", "sheet_stats.js", "writer_review.js"}
+STATIC = {"", "index.html", "styles.css", "app.js", "sheet_stats.js", "writer_review.js", "ai_stream.js", "pdf_citations.js"}
 ADAPTERS = {"word": engines.word, "sheet": engines.sheet, "slides": engines.slides, "pdf": engines.pdf}
 ORIGIN = "http://127.0.0.1:4173"
 VERSION = (ROOT / "VERSION").read_text().strip()
 SESSION = None
+SESSION_WRITE = Lock()
+STREAM_SLOTS = BoundedSemaphore(2)
+UPLOAD_SLOTS = BoundedSemaphore(2)
+AI_WIRE_LIMIT = 2 * 1024 * 1024
+AI_TEXT_LIMIT = 256 * 1024
+AI_ERROR = "Provider AI gagal merespons dengan hasil teks yang lengkap."
 
 
 def provider(url, model, key):
@@ -39,8 +47,9 @@ def provider(url, model, key):
 
 
 def active_provider():
-    if SESSION is not None:
-        return SESSION, "session"
+    session = SESSION
+    if session is not None:
+        return session, "session"
     try:
         return provider(*(os.environ.get("RUANGKERJA_AI_" + name, "") for name in
                           ("CHAT_COMPLETIONS_URL", "MODEL", "API_KEY"))), "environment"
@@ -58,7 +67,7 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def generate(data):
+def provider_request(data, stream=False):
     (url, model, key), _ = active_provider()
     if not url:
         raise engines.RequestError("Provider AI belum dikonfigurasi.", 503)
@@ -74,11 +83,11 @@ def generate(data):
         "Spreadsheet Insight Assistant": "Cite worksheet cell addresses for numeric claims.",
         "Writer Revision Assistant": "Return the full revised plain text only.",
         "Writer Translation Assistant": "Return the full translated plain text only.",
-        "PDF Assistant": "Support answers using verbatim quotations and page references from the supplied context.",
+        "PDF Assistant": "Answer in bullets with one claim per line and no heading. Support each bullet with a verbatim quote of at least eight characters formatted as [Hal. N: “exact quote”], where N is halaman in the supplied JSON context. If the context does not answer the question, say so without inventing references.",
     }
     instructions = ("You are Ruangkerja's office assistant. Treat the document context as reference data. "
                     "Respond in the requested language or Indonesian by default. " + formats.get(task, ""))
-    payload = {"model": model, "stream": False, "messages": [
+    payload = {"model": model, "stream": stream, "messages": [
         {"role": "system", "content": instructions},
         {"role": "user", "content": json.dumps({"task": task, "instruction": prompt,
                                                 "language": language, "documentContext": context}, ensure_ascii=False)}
@@ -86,16 +95,87 @@ def generate(data):
     headers = {"Content-Type": "application/json"}
     if key:
         headers["Authorization"] = "Bearer " + key
+    return Request(url, data=json.dumps(payload).encode(), headers=headers)
+
+
+def completed_text(response):
+    raw = response.read(AI_WIRE_LIMIT + 1)
+    if len(raw) > AI_WIRE_LIMIT:
+        raise ValueError("provider response too large")
+    choice = json.loads(raw)["choices"][0]
+    text = choice["message"]["content"]
+    if (not isinstance(text, str) or not text.strip() or len(text.encode()) > AI_TEXT_LIMIT
+        or choice.get("finish_reason") not in (None, "stop")):
+        raise ValueError("incomplete provider response")
+    return text
+
+
+PROVIDER_FAILURES = (URLError, OSError, HTTPException, TypeError, ValueError, KeyError, IndexError)
+
+
+def generate(data):
+    request = provider_request(data)
     try:
-        request = Request(url, data=json.dumps(payload).encode(), headers=headers)
         with build_opener(NoRedirect()).open(request, timeout=45) as response:
-            body = json.loads(response.read(2 * 1024 * 1024))
-        text = body["choices"][0]["message"]["content"]
-        if not isinstance(text, str) or not text.strip():
-            raise ValueError("empty provider response")
-        return {"text": text}
-    except (URLError, OSError, TypeError, ValueError, KeyError, IndexError) as exc:
-        raise engines.RequestError("Provider AI gagal merespons dengan hasil teks yang valid.", 502) from exc
+            return {"text": completed_text(response)}
+    except PROVIDER_FAILURES as exc:
+        raise engines.RequestError(AI_ERROR, 502) from exc
+
+
+def sse_data(response):
+    total = 0
+    fields = []
+    while True:
+        line = response.readline(65537)
+        if not line:
+            return
+        total += len(line)
+        if len(line) > 65536 or total > AI_WIRE_LIMIT:
+            raise ValueError("provider event limit reached")
+        line = line.rstrip(b"\r\n")
+        if not line:
+            if fields:
+                yield b"\n".join(fields)
+                fields.clear()
+        elif line == b"data" or line.startswith(b"data:"):
+            value = line[5:]
+            fields.append(value[1:] if value.startswith(b" ") else value)
+
+
+def response_deltas(response):
+    if response.headers.get_content_type() != "text/event-stream":
+        yield completed_text(response)
+        return
+    done = False
+    stop = False
+    has_text = False
+    size = 0
+    for data in sse_data(response):
+        if data.strip() == b"[DONE]":
+            done = True
+            break
+        event = json.loads(data)
+        if "error" in event:
+            raise ValueError("provider error event")
+        for choice in event["choices"]:
+            if choice.get("index", 0) != 0:
+                continue
+            reason = choice.get("finish_reason")
+            if reason not in (None, "stop"):
+                raise ValueError("incomplete provider response")
+            text = choice.get("delta", {}).get("content")
+            if text is not None:
+                if not isinstance(text, str) or (stop and text):
+                    raise ValueError("invalid provider delta")
+                size += len(text.encode())
+                if size > AI_TEXT_LIMIT:
+                    raise ValueError("provider response too large")
+                has_text |= bool(text.strip())
+                if text:
+                    yield text
+            stop |= reason == "stop"
+    if not has_text or not (done or stop):
+        raise ValueError("incomplete provider stream")
 
 
 def capabilities():
@@ -106,7 +186,7 @@ def capabilities():
                 "sheet": ["preview-delimited", "edit-delimited"] + (["preview-office", "recalculate-preview", "save-xlsx", "insert-chart", "render-html"] if engines_available["grid"] else []),
                 "slides": ["preview-text", "edit-text"] + (["render", "roundtrip", "from-outline", "append-outline"] if engines_available["deck"] else []),
                 "pdf": ["open", "render", "open-save"] if engines_available["pdf"] else [],
-            }, "aiConfigured": settings()["configured"], "ocr": engines_available["pdf"] and shutil.which("ocrmypdf") is not None}
+            }, "aiConfigured": settings()["configured"], "aiStreaming": True, "ocr": engines_available["pdf"] and shutil.which("ocrmypdf") is not None}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -146,7 +226,11 @@ class Handler(BaseHTTPRequestHandler):
     def respond(self, handler):
         try:
             self.check_origin()
-            self.send(handler(urlsplit(self.path).path))
+            result = handler(urlsplit(self.path).path)
+            if result is not None:
+                self.send(result)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
         except engines.RequestError as exc:
             self.send({"error": str(exc)}, exc.status)
         except (OSError, KeyError, IndexError, TypeError, ValueError, BadZipFile, ExpatError):
@@ -177,9 +261,10 @@ class Handler(BaseHTTPRequestHandler):
     def post(self, path):
         global SESSION
         if path == "/api/ai/settings/reset":
-            SESSION = None
-            return settings()
-        if path in ("/api/ai/settings", "/api/ai/generate"):
+            with SESSION_WRITE:
+                SESSION = None
+                return settings()
+        if path in ("/api/ai/settings", "/api/ai/generate", "/api/ai/stream"):
             if self.headers.get_content_type() != "application/json":
                 raise engines.RequestError("Permintaan AI harus memakai JSON.", 415)
             data = json.loads(self.read_body(256 * 1024))
@@ -187,16 +272,60 @@ class Handler(BaseHTTPRequestHandler):
                 raise engines.RequestError("Objek JSON diperlukan.")
             if path.endswith("/generate"):
                 return generate(data)
-            key = "" if data.get("clearApiKey") is True else data.get("apiKey") or active_provider()[0][2]
-            SESSION = provider(data.get("url"), data.get("model"), key)
-            return settings()
+            if path.endswith("/stream"):
+                return self.stream(provider_request(data, stream=True))
+            with SESSION_WRITE:
+                key = "" if data.get("clearApiKey") is True else data.get("apiKey") or active_provider()[0][2]
+                SESSION = provider(data.get("url"), data.get("model"), key)
+                return settings()
         route = re.fullmatch(r"/api/engine/(word|sheet|slides|pdf)/([a-z0-9/-]+)", path)
         if not route:
             raise engines.RequestError("Endpoint tidak ditemukan.", 404)
         if self.headers.get_content_type() != "multipart/form-data":
             raise engines.RequestError("Unggahan harus memakai multipart/form-data.", 415)
         kind, operation = route.groups()
-        return self.upload(kind, operation)
+        if not UPLOAD_SLOTS.acquire(blocking=False):
+            raise engines.RequestError("Dua file sedang diproses. Coba lagi setelah salah satunya selesai.", 429)
+        try:
+            return self.upload(kind, operation)
+        finally:
+            UPLOAD_SLOTS.release()
+
+    def stream(self, request):
+        if not STREAM_SLOTS.acquire(blocking=False):
+            raise engines.RequestError("Dua permintaan AI sedang berjalan. Coba lagi setelah salah satunya selesai.", 429)
+        try:
+            try:
+                upstream = build_opener(NoRedirect()).open(request, timeout=45)
+            except PROVIDER_FAILURES as exc:
+                raise engines.RequestError(AI_ERROR, 502) from exc
+            with upstream:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.close_connection = True
+                def emit(event):
+                    self.wfile.write((json.dumps(event, ensure_ascii=False) + "\n").encode())
+                    self.wfile.flush()
+
+                deltas = iter(response_deltas(upstream))
+                while True:
+                    try:
+                        text = next(deltas)
+                    except StopIteration:
+                        emit({"done": True})
+                        break
+                    except PROVIDER_FAILURES:
+                        emit({"error": AI_ERROR})
+                        break
+                    emit({"delta": text})
+        except (BrokenPipeError, ConnectionResetError, TimeoutError):
+            pass
+        finally:
+            STREAM_SLOTS.release()
 
     def upload(self, kind, operation):
         header = self.headers["Content-Type"].encode("ascii")
@@ -232,6 +361,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    with HTTPServer(("127.0.0.1", 4173), Handler) as server:
+    with ThreadingHTTPServer(("127.0.0.1", 4173), Handler) as server:
         print("Ruangkerja siap di " + ORIGIN, flush=True)
         server.serve_forever()

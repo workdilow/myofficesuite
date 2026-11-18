@@ -1,6 +1,6 @@
 # Ruangkerja
 
-Workspace lokal Writer, Spreadsheet, Slides, PDF, dan asisten AI. Versi `0.3.0-dev.43` membangun ulang host dari snapshot UI dev.42 dengan CLI Craft yang terpisah.
+Workspace lokal Writer, Spreadsheet, Slides, PDF, dan asisten AI. Host memakai CLI Craft terpisah. Versi `0.3.0-dev.44` menambahkan streaming jawaban AI pada panel dokumen dan katalog.
 
 ## Jalankan
 
@@ -28,7 +28,7 @@ OCR opsional memerlukan `ocrmypdf` beserta Tesseract dan model bahasa Inggris ba
 
 Atur **Pengaturan provider AI** di UI atau isi `RUANGKERJA_AI_CHAT_COMPLETIONS_URL`, `RUANGKERJA_AI_MODEL`, dan, bila diperlukan, `RUANGKERJA_AI_API_KEY` sebelum menjalankan host. Gunakan endpoint chat-completions lengkap. HTTP diterima untuk loopback dan provider remote memakai HTTPS. Konfigurasi dari UI berlaku selama sesi host. Panel dokumen hanya menyertakan konteks file setelah pengguna memilih dan meninjaunya.
 
-Writer menyediakan review perubahan teks. Spreadsheet menyediakan saran formula, review TSV, dan laporan insight. Slides menyediakan review teks dan outline. Katalog tetap memakai status demo ketika provider belum dikonfigurasi. Streaming dan pemasangan runtime/model AI lokal masih terbuka.
+Writer menyediakan review perubahan teks. Spreadsheet menyediakan saran formula, review TSV, dan laporan insight. Slides menyediakan review teks dan outline. Jawaban PDF mencocokkan kutipan dengan teks halaman yang tercantum dalam pratinjau konteks. Katalog tetap memakai status demo ketika provider belum dikonfigurasi. Jawaban muncul bertahap untuk provider yang mengirim Server-Sent Events. Respons JSON utuh tetap bisa ditampilkan jika provider mengembalikannya. Tombol **Hentikan** membatalkan pembacaan di UI. Review, penerapan edit, dan unduhan tersedia setelah respons selesai. Pemasangan runtime/model AI lokal masih terbuka.
 
 ## Verifikasi dan kompatibilitas
 
@@ -37,4 +37,4 @@ python3 -m unittest discover -s tests
 node --test tests/helpers.test.js
 ```
 
-Tes PPTX dengan pembaca independen memakai paket opsional `python-pptx` dan dilewati jika paket tidak terpasang. Revisi upstream dikunci sebagai acuan instalasi. Uji binary Craft nyata, korpus format Office dari aplikasi lain, fidelity layout kustom, serta paket desktop lintas platform masih harus dilengkapi. [Riwayat hingga dev.42](docs/dev42-history.md) mendokumentasikan implementasi sebelumnya.
+Tes PPTX dengan pembaca independen memakai paket opsional `python-pptx` dan dilewati jika paket tidak terpasang. Revisi upstream dikunci sebagai acuan instalasi. Uji binary Craft nyata, korpus format Office dari aplikasi lain, fidelity layout kustom, serta paket desktop lintas platform masih harus dilengkapi. [Roadmap saat ini](ROADMAP.md) · [Riwayat hingga dev.42](docs/dev42-history.md) mendokumentasikan implementasi sebelumnya.

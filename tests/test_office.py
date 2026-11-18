@@ -31,6 +31,12 @@ class LocalOfficeTests(unittest.TestCase):
             self.assertEqual(data, b"Sesudah")
             self.assertEqual(source.read_text(), "Before")
 
+    def test_pdf_preview_preserves_page_numbers_for_quotes(self):
+        with patch("engines.run", side_effect=['{"pages":3}', "satu", "", "tiga"]):
+            preview = engines.pdf("open", Path("sample.pdf"), Path("output.pdf"), {})
+        self.assertEqual(preview["pageTexts"], ["satu", "", "tiga"])
+        self.assertIn("--- Halaman 3 ---\ntiga", preview["text"])
+
     def test_provider_url_and_secret_visibility(self):
         with self.assertRaises(engines.RequestError):
             host.provider("http://remote.example/api", "model", "secret")
