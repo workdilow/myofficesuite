@@ -32,7 +32,7 @@ class LocalOfficeTests(unittest.TestCase):
             self.assertEqual(source.read_text(), "Before")
 
     def test_pdf_preview_preserves_page_numbers_for_quotes(self):
-        with patch("engines.run", side_effect=['{"pages":3}', "satu", "", "tiga"]):
+        with patch("engines.shutil.which", return_value="pdfcraft-cli"), patch("engines.pdf_support.handle", return_value=None), patch("engines.run", side_effect=['{"pages":3}', "satu", "", "tiga"]):
             preview = engines.pdf("open", Path("sample.pdf"), Path("output.pdf"), {})
         self.assertEqual(preview["pageTexts"], ["satu", "", "tiga"])
         self.assertIn("--- Halaman 3 ---\ntiga", preview["text"])

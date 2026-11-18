@@ -1,6 +1,6 @@
 # Ruangkerja
 
-Workspace lokal Writer, Spreadsheet, Slides, PDF, dan asisten AI. Host memakai CLI Craft terpisah. Versi `0.3.0-dev.44` menambahkan streaming jawaban AI pada panel dokumen dan katalog.
+Workspace lokal Writer, Spreadsheet, Slides, PDF, dan asisten AI. Host memakai CLI Craft terpisah. Versi `0.3.0-dev.45` menambahkan buka dan render PDF berpassword, susun salinan halaman, catatan, dan pemilihan bahasa OCR.
 
 ## Jalankan
 
@@ -19,10 +19,18 @@ Pasang binary upstream `wordcraft-cli`, `gridcraft-cli`, `deckcraft-cli`, dan `p
 | Writer | Buka, edit, dan unduh teks. WordCraft mengekstrak teks format Office dan membuat dokumen baru dari teks hasil edit. | Ekspor berbasis teks. DOC perlu dikonversi ke DOCX sebelum disimpan. |
 | Spreadsheet | Preview 50 × 20, edit sel, statistik lokal dari alamat sumber. GridCraft menambah preview Office, hasil formula, simpan XLSX, dan chart. | CSV/TSV tanpa GridCraft mendukung input literal. XLS/ODS perlu dikonversi ke XLSX untuk penyimpanan edit. |
 | Slides | Preview/edit teks shape, render dan outline dengan DeckCraft. Outline dapat diunduh sebagai deck baru atau ditambahkan ke salinan PPTX aktif bersama edit teks yang belum disimpan. | Penambahan 1–30 slide menggunakan layout Title and Content dari master slide terakhir. Preview editor dibatasi 40 slide dan edit teks menggunakan format run pertama setiap paragraf. |
-| PDF | PdfCraft CLI menyediakan inspeksi, ekstraksi teks terbatas, render halaman, dan simpan salinan PDF tanpa password. | OCR opsional lewat OCRmyPDF hingga 30 halaman. PDF terenkripsi belum tersedia. |
+| PDF | PdfCraft CLI menyediakan inspeksi, ekstraksi teks terbatas, render, dan simpan ulang PDF. PDFium opsional menyediakan buka/render PDF berpassword, salinan halaman terpilih hingga 250 halaman, rotasi, dan catatan teks. | Password hanya dipakai di memori. PDF terenkripsi dibuka dalam mode baca saja. OCR dibatasi hingga 30 halaman. Salinan halaman dapat kehilangan bookmark dan formulir tingkat dokumen. |
 | Cetak | Dialog cetak browser. | Paket desktop dan pencetakan langsung Windows lewat winprint.rs masih terbuka. |
 
-OCR opsional memerlukan `ocrmypdf` beserta Tesseract dan model bahasa Inggris bawaan. Hasil diunduh sebagai salinan.
+Pasang dependensi PDFium opsional di environment Python 3.11 atau lebih baru yang menjalankan host:
+
+```sh
+python3 -m pip install -r requirements-pdf.txt
+```
+
+PdfCraft tetap dipakai untuk PDF tanpa password jika CLI tersedia. PDFium menangani PDF berpassword di dalam proses host tanpa meneruskan password ke baris perintah. Ekstraksi teks dan konteks AI mengikuti izin salin dokumen.
+
+OCR memerlukan `ocrmypdf` dan Tesseract. Pasang model `tesseract-ocr-ind` untuk Bahasa Indonesia pada Debian/Ubuntu, atau model `ind` dari distribusi platform Anda. UI hanya menawarkan Bahasa Indonesia, Inggris, atau gabungan keduanya berdasarkan model `ind` dan `eng` yang terpasang. Hasil diunduh sebagai salinan.
 
 ## Provider AI
 
@@ -37,4 +45,4 @@ python3 -m unittest discover -s tests
 node --test tests/helpers.test.js
 ```
 
-Tes PPTX dengan pembaca independen memakai paket opsional `python-pptx` dan dilewati jika paket tidak terpasang. Revisi upstream dikunci sebagai acuan instalasi. Uji binary Craft nyata, korpus format Office dari aplikasi lain, fidelity layout kustom, serta paket desktop lintas platform masih harus dilengkapi. [Roadmap saat ini](ROADMAP.md) · [Riwayat hingga dev.42](docs/dev42-history.md) mendokumentasikan implementasi sebelumnya.
+Tes PPTX dengan pembaca independen memakai paket opsional `python-pptx` dan dilewati jika paket tidak terpasang. Tes PDF memakai `requirements-pdf.txt` serta `pypdf` dan `reportlab` untuk membuat serta membaca fixture independen. Revisi upstream dikunci sebagai acuan instalasi. Uji binary Craft nyata, korpus format Office dari aplikasi lain, fidelity layout kustom, serta paket desktop lintas platform masih harus dilengkapi. [Roadmap saat ini](ROADMAP.md) · [Riwayat hingga dev.42](docs/dev42-history.md) mendokumentasikan implementasi sebelumnya.

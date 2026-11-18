@@ -6,6 +6,8 @@ import shutil
 import subprocess
 from tempfile import TemporaryFile
 
+import pdf_support
+
 from slides import edit_slides, preview_slides, append_slides
 
 LIMIT = 64 * 1024 * 1024
@@ -228,38 +230,61 @@ def slides(operation, source, output, fields, outline=None):
     raise RequestError("Operasi Slides belum tersedia.", 501)
 
 
+def ocr_languages():
+    if not shutil.which("ocrmypdf") or not shutil.which("tesseract"):
+        return []
+    try:
+        languages = set(run("tesseract", "--list-langs", timeout=4).splitlines())
+    except RequestError:
+        return []
+    supported = [name for name in ("eng", "ind") if name in languages]
+    if len(supported) == 2:
+        supported.append("ind+eng")
+    return supported
+
+
 def pdf(operation, source, output, fields):
+    page = re.fullmatch(r"page/([1-9][0-9]{0,5})", operation)
+    kind = "page" if page else operation
+    craft = bool(shutil.which(BINARIES["pdf"]))
+    if kind in ("pages", "note") and not pdf_support.available():
+        raise RequestError("Pasang dependensi PDF opsional untuk menyunting salinan PDF.", 503)
+    result = pdf_support.handle(source, output, kind, fields | ({"page": page[1]} if page else {}),
+                                prefer_craft=craft)
+    if result is True:
+        return file_result(output, "application/pdf")
+    if kind == "ocr":
+        language = fields.get("language", "eng")
+        if language not in ocr_languages():
+            raise RequestError("Model OCR untuk bahasa ini belum terpasang.", 503)
+        if craft:
+            info = json.loads(run("pdf", "info", source))
+            if info.get("encrypted"):
+                raise RequestError("OCR PDF terenkripsi belum tersedia.", 422)
+            pages = int(info["pages"])
+        else:
+            if not result:
+                raise RequestError("Gunakan PDF tanpa enkripsi dan pasang dependensi PDF opsional.", 503)
+            pages = result["pageCount"]
+        if pages > 30:
+            raise RequestError("OCR dibatasi hingga 30 halaman.", 413)
+        run("ocrmypdf", "--language", language, "--skip-text", "--output-type", "pdf", "--optimize", 0,
+            "--jobs", 1, source, output, timeout=120)
+        return file_result(output, "application/pdf")
+    if result is not None:
+        return result
+    if not craft:
+        raise RequestError("Pasang pdfcraft-cli atau dependensi PDF opsional untuk membuka PDF.", 503)
     info = json.loads(run("pdf", "info", source))
     if info.get("encrypted"):
-        raise RequestError("PDF terenkripsi belum didukung oleh adapter CLI.", 422)
-    if operation == "ocr":
-        if int(info["pages"]) > 30:
-            raise RequestError("OCR dibatasi hingga 30 halaman.", 413)
-        run("ocrmypdf", "--skip-text", "--output-type", "pdf", "--optimize", 0, "--jobs", 1,
-            source, output, timeout=120)
-        return file_result(output, "application/pdf")
-    if operation == "open-save":
+        raise RequestError("Pasang dependensi PDF opsional untuk membuka PDF terenkripsi.", 503)
+    if kind == "open-save":
         run("pdf", "edit", source, "--out", output)
         return file_result(output, "application/pdf")
-    if operation == "open":
-        pages = info["pages"]
-        count = len(pages) if isinstance(pages, list) else int(pages)
-        page_texts = []
-        remaining = 100000
-        truncated = False
-        for number in range(1, min(count, 12) + 1):
-            if remaining == 0:
-                break
-            text = run("pdf", "text", source, "--page", number).strip()
-            truncated = len(text) > remaining
-            page_texts.append(text[:remaining])
-            remaining -= len(page_texts[-1])
-        text = "\n\n".join(f"--- Halaman {index} ---\n{page}" for index, page in enumerate(page_texts, 1))
-        return {"text": text, "pageTexts": page_texts, "pageCount": count,
-                "pagesExtracted": len(page_texts), "encrypted": False,
-                "textLimitReached": len(page_texts) < count or truncated}
-    if re.fullmatch(r"page/[1-9][0-9]{0,5}", operation):
+    if kind == "open":
+        return pdf_support.preview(int(info["pages"]), lambda n: run("pdf", "text", source, "--page", n))
+    if page:
         image = output.with_suffix(".png")
-        run("pdf", "render", source, "--page", operation.split("/")[-1], "--dpi", "96", "--out", image)
+        run("pdf", "render", source, "--page", page[1], "--dpi", "96", "--out", image)
         return file_result(image, "image/png")
     raise RequestError("Operasi PDF belum tersedia.", 501)

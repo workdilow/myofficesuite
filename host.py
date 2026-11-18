@@ -7,7 +7,6 @@ import mimetypes
 import os
 from pathlib import Path
 import re
-import shutil
 from tempfile import TemporaryDirectory
 from threading import BoundedSemaphore, Lock
 from http.client import HTTPException
@@ -18,6 +17,7 @@ from xml.parsers.expat import ExpatError
 from zipfile import BadZipFile
 
 import engines
+import pdf_support
 
 ROOT = Path(__file__).resolve().parent
 STATIC = {"", "index.html", "styles.css", "app.js", "sheet_stats.js", "writer_review.js", "ai_stream.js", "pdf_citations.js"}
@@ -180,13 +180,19 @@ def response_deltas(response):
 
 def capabilities():
     engines_available = engines.available()
+    alternate_pdf = pdf_support.available()
+    pdf_view = engines_available["pdf"] or alternate_pdf
+    ocr = engines.ocr_languages() if pdf_view else []
     return {"version": VERSION, "engines": engines_available, "limits": {"uploadBytes": engines.LIMIT},
             "operations": {
                 "word": ["open-text", "replace-text"] + (["extract-office-text", "export-new-document"] if engines_available["word"] else []),
                 "sheet": ["preview-delimited", "edit-delimited"] + (["preview-office", "recalculate-preview", "save-xlsx", "insert-chart", "render-html"] if engines_available["grid"] else []),
                 "slides": ["preview-text", "edit-text"] + (["render", "roundtrip", "from-outline", "append-outline"] if engines_available["deck"] else []),
-                "pdf": ["open", "render", "open-save"] if engines_available["pdf"] else [],
-            }, "aiConfigured": settings()["configured"], "aiStreaming": True, "ocr": engines_available["pdf"] and shutil.which("ocrmypdf") is not None}
+                "pdf": (["open", "render"] if pdf_view else [])
+                       + (["open-save"] if engines_available["pdf"] else [])
+                       + (["encrypted-view", "page-copy", "text-note"] if alternate_pdf else [])
+                       + (["ocr"] if ocr else []),
+            }, "aiConfigured": settings()["configured"], "aiStreaming": True, "ocr": bool(ocr), "ocrLanguages": ocr, "pdfPageCopy": alternate_pdf}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -231,7 +237,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(result)
         except (BrokenPipeError, ConnectionResetError):
             pass
-        except engines.RequestError as exc:
+        except (engines.RequestError, pdf_support.PdfError) as exc:
             self.send({"error": str(exc)}, exc.status)
         except (OSError, KeyError, IndexError, TypeError, ValueError, BadZipFile, ExpatError):
             self.send({"error": "Format file atau parameter operasi tidak valid."}, 422)
